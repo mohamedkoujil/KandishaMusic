@@ -25,7 +25,7 @@ client.on("messageCreate", async (message) => {
   if (message.content.startsWith("!play")) {
     const args = message.content.split(" ");
     const url = args[1]; // URL de YouTube después de !play
-
+    console.log(url);
     if (!url) {
       message.reply("Y el link de yutu que? no soy adivino, puta");
       return;
