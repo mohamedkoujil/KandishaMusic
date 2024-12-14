@@ -1,79 +1,163 @@
-// Requiere las dependencias necesarias
-const { Client, GatewayIntentBits } = require("discord.js");
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-} = require("@discordjs/voice");
-const play = require("play-dl");
-// Usar dotenv para cargar las variables de entorno
+const { Client, GatewayIntentBits, GuildMember } = require("discord.js");
+const { Player, QueryType } = require("discord-player");
 require("dotenv").config();
 
-// Crea el cliente de Discord con las intenciones necesarias
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+
+// Crear el cliente de Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
 });
 
-// Token del bot, importado desde un archivo .env
-const TOKEN = process.env.DISCORD_TOKEN;
+// Inicializar el reproductor
+const player = new Player(client);
 
+// Configurar extractores (opcional, para usar plataformas específicas)
+const { YoutubeiExtractor } = require("discord-player-youtubei");
+player.extractors.register(YoutubeiExtractor, {});
+
+// Cuando el bot esté listo
 client.on("ready", () => {
-  console.log(`¡Bot conectado como ${client.user.tag}!`);
+  console.log("Bot is online!");
+  client.user.setActivity("🎶 | Music Time", { type: "LISTENING" });
 });
 
+// Manejar comandos
 client.on("messageCreate", async (message) => {
-  console.log("Mensaje recibido:", message.content);
-  if (message.content.startsWith("!play")) {
-    const args = message.content.split(" ");
-    const url = args[1];
-    console.log("URL recibida:", url);
+  if (message.author.bot || !message.guild) return;
 
-    if (!url) {
-      message.reply("Y el link de yutu que? no soy adivino.");
-      return;
-    }
+  if (!client.application?.owner) await client.application?.fetch();
 
-    // Únete al canal de voz del usuario
-    const channel = message.member.voice.channel;
-    if (!channel) {
-      message.reply("Tienes que estar en un canal de voz Albert Einstein");
-      return;
-    }
+  if (
+    message.content === "!deploy" &&
+    message.author.id === client.application?.owner?.id
+  ) {
+    await message.guild.commands.set([
+      {
+        name: "play",
+        description: "Play a song from YouTube",
+        options: [
+          {
+            name: "query",
+            type: 3, // STRING type
+            description: "The song you want to play",
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "stop",
+        description: "Stop the player",
+      },
+      //TODO add skip queue and pause
+    ]);
 
-    try {
-      // Únete al canal de voz
-      const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator,
-      });
-
-      console.log("Bot unido al canal de voz");
-
-      // Reproduce el audio de YouTube
-      const stream = await play.stream(url);
-      const resource = createAudioResource(stream.stream, {
-        inputType: stream.type,
-      });
-
-      const player = createAudioPlayer();
-      connection.subscribe(player);
-      player.play(resource);
-
-      message.reply("🎶 Reproduciendo: " + url);
-    } catch (error) {
-      console.error(
-        "Error al unirse al canal de voz o reproducir audio:",
-        error
-      );
-      message.reply("Error suprimiko, as puesto bien el link tete?");
-    }
+    await message.reply("Commands deployed!");
   }
 });
 
-// Inicia sesión con el token del bot
-client.login(TOKEN);
+// Manejar interacciones (slash commands)
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand() || !interaction.guildId) return;
+
+  if (
+    !(interaction.member instanceof GuildMember) ||
+    !interaction.member.voice.channel
+  ) {
+    return interaction.reply({
+      content: "Tienes que estar en un canal de voz Albert Einstein",
+      ephemeral: true,
+    });
+  }
+
+  const queue = player.nodes.create(interaction.guild, {
+    metadata: {
+      channel: interaction.channel,
+    },
+  });
+
+  if (interaction.commandName === "play") {
+    await interaction.deferReply();
+
+    const query = interaction.options.getString("query");
+    const track = await player
+      .search(query, {
+        requestedBy: interaction.user,
+        searchEngine: QueryType.YOUTUBE,
+      })
+      .then((x) => x.tracks[0]);
+
+    if (!track) {
+      return interaction.followUp("No ay naa por aki primo");
+    }
+
+    try {
+      if (!queue.connection)
+        await queue.connect(interaction.member.voice.channel);
+    } catch {
+      queue.delete();
+      return interaction.followUp("No me e podio unir al canal de voz primiko");
+    }
+
+    queue.addTrack(track);
+    if (!queue.isPlaying()) await queue.node.play();
+
+    return interaction.followUp(`🎶 | Playing **${track.title}** now!`);
+  } else if (interaction.commandName === "skip") {
+    await interaction.deferReply();
+
+    if (!queue || !queue.isPlaying()) {
+      return interaction.followUp(
+        "❌ | Como vas a parar algo que no esta sonando? Albert Einstein"
+      );
+    }
+
+    const currentTrack = queue.current;
+    const success = queue.node.skip();
+
+    return interaction.followUp(
+      success
+        ? `✅ | Skipped **${currentTrack.title}**!`
+        : "❌ | Something went wrong!"
+    );
+  } else if (interaction.commandName === "stop") {
+    await interaction.deferReply();
+
+    if (!queue || !queue.isPlaying()) {
+      return interaction.followUp("❌ | No music is playing!");
+    }
+
+    queue.delete();
+    return interaction.followUp(
+      "🛑 | Porke para la musica irmano, tu jiripoya o que?"
+    );
+  } else {
+    interaction.reply({
+      content: "Unknown command!",
+      ephemeral: true,
+    });
+  }
+});
+
+// Manejar eventos del reproductor
+player.events.on("playerStart", (queue, track) => {
+  queue.metadata.channel.send(
+    `🎶 | Vaya mierda de canción primo: **${track.title}**!`
+  );
+});
+
+player.events.on("error", (queue, error) => {
+  console.error(`Error: ${error.message}`);
+});
+
+player.events.on("playerError", (queue, error) => {
+  console.error(`Player error: ${error.message}`);
+});
+
+// Iniciar sesión del cliente
+client.login(DISCORD_TOKEN);
