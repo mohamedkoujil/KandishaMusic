@@ -1,4 +1,4 @@
-// use requiere para importar las dependencias
+// Requiere las dependencias necesarias
 const { Client, GatewayIntentBits } = require("discord.js");
 const {
   joinVoiceChannel,
@@ -6,12 +6,16 @@ const {
   createAudioResource,
 } = require("@discordjs/voice");
 const play = require("play-dl");
-// usar dotenv para cargar las variables de entorno
+// Usar dotenv para cargar las variables de entorno
 require("dotenv").config();
 
-// Crea el cliente de Discord
+// Crea el cliente de Discord con las intenciones necesarias
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 // Token del bot, importado desde un archivo .env
@@ -22,12 +26,14 @@ client.on("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
+  console.log("Mensaje recibido:", message.content);
   if (message.content.startsWith("!play")) {
     const args = message.content.split(" ");
-    const url = args[1]; // URL de YouTube después de !play
-    console.log(url);
+    const url = args[1];
+    console.log("URL recibida:", url);
+
     if (!url) {
-      message.reply("Y el link de yutu que? no soy adivino, puta");
+      message.reply("Y el link de yutu que? no soy adivino.");
       return;
     }
 
@@ -38,15 +44,18 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-    });
-
-    // Reproduce el audio de YouTube
     try {
-      const stream = await play.stream(url); // Obtén el stream de YouTube
+      // Únete al canal de voz
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+      });
+
+      console.log("Bot unido al canal de voz");
+
+      // Reproduce el audio de YouTube
+      const stream = await play.stream(url);
       const resource = createAudioResource(stream.stream, {
         inputType: stream.type,
       });
@@ -57,7 +66,10 @@ client.on("messageCreate", async (message) => {
 
       message.reply("🎶 Reproduciendo: " + url);
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Error al unirse al canal de voz o reproducir audio:",
+        error
+      );
       message.reply("Error suprimiko, as puesto bien el link tete?");
     }
   }
