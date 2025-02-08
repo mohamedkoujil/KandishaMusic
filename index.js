@@ -32,10 +32,10 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.guild) return;
 
   if (!client.application?.owner) await client.application?.fetch();
-
+  //deploy the commands
   if (
-    message.content === "!deploy" &&
-    message.author.id === client.application?.owner?.id
+    message.content === "!deploy"
+    //&& message.author.id === client.application?.owner?.id
   ) {
     await message.guild.commands.set([
       {
@@ -51,10 +51,25 @@ client.on("messageCreate", async (message) => {
         ],
       },
       {
+        name: "pause",
+        description: "Pause the current song",
+      },
+      {
+        name: "resume",
+        description: "Resume the current song",
+      },
+      {
         name: "stop",
         description: "Stop the player",
       },
-      //TODO add skip queue and pause
+      {
+        name: "skip",
+        description: "Skip the current song",
+      },
+      {
+        name: "queue",
+        description: "Show the current queue",
+      },
     ]);
 
     await message.reply("Commands deployed!");
@@ -112,19 +127,11 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.deferReply();
 
     if (!queue || !queue.isPlaying()) {
-      return interaction.followUp(
-        "❌ | Como vas a parar algo que no esta sonando? Albert Einstein"
-      );
+      return interaction.followUp("❌ | No hay naa que saltar primo");
     }
 
-    const currentTrack = queue.current;
-    const success = queue.node.skip();
-
-    return interaction.followUp(
-      success
-        ? `✅ | Skipped **${currentTrack.title}**!`
-        : "❌ | Something went wrong!"
-    );
+    queue.node.skip();
+    return interaction.followUp("⏭ | Skipped the current song!");
   } else if (interaction.commandName === "stop") {
     await interaction.deferReply();
 
@@ -136,6 +143,38 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.followUp(
       "🛑 | Porke para la musica irmano, tu jiripoya o que?"
     );
+  } else if (interaction.commandName === "pause") {
+    await interaction.deferReply();
+
+    if (!queue || !queue.isPlaying()) {
+      return interaction.followUp("❌ | No hay música sonando ahora mismo.");
+    }
+
+    queue.node.setPaused(true); // Pausar la música
+    return interaction.followUp("⏸ | Música pausada!");
+  } else if (interaction.commandName === "resume") {
+    await interaction.deferReply();
+
+    if (!queue || !queue.isPlaying()) {
+      return interaction.followUp("❌ | No hay música sonando ahora mismo.");
+    }
+
+    queue.node.setPaused(false); // Reanudar la música
+    return interaction.followUp("▶ | Música reanudada!");
+  } else if (interaction.commandName === "queue") {
+    await interaction.deferReply();
+
+    if (!queue || !queue.isPlaying()) {
+      return interaction.followUp("❌ | No music is playing!");
+    }
+
+    const tracks = queue.tracks.map(
+      (track, index) => `${index + 1}. ${track.title}`
+    );
+
+    return interaction.followUp({
+      content: `🎶 | **Queue**:\n${tracks.join("\n")}`,
+    });
   } else {
     interaction.reply({
       content: "Unknown command!",
